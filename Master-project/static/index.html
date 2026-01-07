@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>DVista – Dataset Intake</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        --bg: #050816;
+        --card: #0f172a;
+        --accent: #38bdf8;
+        --accent-soft: rgba(56, 189, 248, 0.15);
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --danger: #f97373;
+        --border: rgba(148, 163, 184, 0.3);
+        --radius: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top, #1d2a3f 0, #020617 50%, #000 100%);
+        color: var(--text);
+      }
+
+      .app {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 40px;
+      }
+
+      h1 {
+        font-size: 28px;
+        margin: 0 0 4px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      h1 span.logo-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #38bdf8, #a855f7);
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.7);
+      }
+
+      .subtitle {
+        margin: 0 0 24px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      @media (max-width: 840px) {
+        .layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      .card {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.98));
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.8);
+        padding: 16px 18px 18px;
+      }
+
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+
+      .card-title {
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .card-tag {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(56, 189, 248, 0.6);
+        color: #7dd3fc;
+        background: rgba(15, 23, 42, 0.9);
+      }
+
+      label {
+        display: block;
+        font-size: 13px;
+        margin-bottom: 4px;
+      }
+
+      .input-row {
+        margin-bottom: 10px;
+      }
+
+      input[type="file"],
+      input[type="text"] {
+        width: 100%;
+        font-size: 13px;
+        padding: 7px 9px;
+        border-radius: 7px;
+        border: 1px solid rgba(148, 163, 184, 0.6);
+        background: rgba(15, 23, 42, 0.9);
+        color: var(--text);
+        outline: none;
+      }
+
+      input[type="file"]:focus,
+      input[type="text"]:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5);
+      }
+
+      .hint {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 7px 14px;
+        border-radius: 999px;
+        border: none;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        color: #020617;
+        background: linear-gradient(135deg, #38bdf8, #a855f7);
+        box-shadow: 0 10px 24px rgba(56, 189, 248, 0.45);
+      }
+
+      button:disabled {
+        opacity: 0.7;
+        cursor: default;
+        box-shadow: none;
+      }
+
+      .status {
+        min-height: 18px;
+        font-size: 12px;
+        margin-top: 6px;
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .status.ok {
+        color: #4ade80;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 11px;
+        border: 1px solid rgba(148, 163, 184, 0.7);
+        color: var(--muted);
+        background: rgba(15, 23, 42, 0.9);
+        margin-right: 4px;
+      }
+
+      .pill-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #22c55e;
+      }
+
+      .pill-danger {
+        border-color: rgba(248, 113, 113, 0.9);
+        color: #fecaca;
+      }
+
+      .pill-danger .pill-dot {
+        background: #ef4444;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 11.5px;
+      }
+
+      th,
+      td {
+        padding: 4px 6px;
+        border-bottom: 1px solid rgba(30, 64, 175, 0.6);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        font-weight: 600;
+        color: #bfdbfe;
+        background: rgba(15, 23, 42, 0.9);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+
+      tbody tr:nth-child(even) {
+        background: rgba(15, 23, 42, 0.8);
+      }
+
+      .scroll {
+        max-height: 260px;
+        overflow: auto;
+        border-radius: 8px;
+        border: 1px solid rgba(30, 64, 175, 0.7);
+        background: radial-gradient(circle at top, #020617, #020617);
+        margin-top: 6px;
+      }
+
+      .section-title {
+        font-size: 13px;
+        font-weight: 500;
+        margin-top: 4px;
+        margin-bottom: 2px;
+      }
+
+      .sanity-list {
+        margin: 4px 0 0;
+        padding-left: 16px;
+        font-size: 12px;
+      }
+
+      .badge {
+        display: inline-flex;
+        font-size: 11px;
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: var(--accent-soft);
+        color: #e0f2fe;
+        border: 1px solid rgba(56, 189, 248, 0.7);
+        margin-left: 4px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <h1>
+        <span class="logo-dot"></span>
+        DVista – Smart Dataset Intake
+      </h1>
+      <p class="subtitle">
+        STEP 1 · Upload all competition CSVs, tell DVista your target column, and get an instant,
+        Kaggle-style overview of each dataset.
+      </p>
+
+      <div class="layout">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Upload datasets</div>
+            <span class="card-tag">STEP 1 · Intake</span>
+          </div>
+
+          <form id="intake-form">
+            <div class="input-row">
+              <label for="csv-file">CSV file(s)</label>
+              <input id="csv-file" name="file" type="file" accept=".csv" multiple required />
+              <div class="hint">Select all competition CSVs together (train, test, lookup tables…).</div>
+            </div>
+
+            <div class="input-row">
+              <label for="target-column">Target column name (optional for now)</label>
+              <input
+                id="target-column"
+                name="target_column"
+                type="text"
+                placeholder="e.g. audience_count"
+              />
+              <div class="hint">
+                DVista will treat any dataset containing this column as a FACT table. You can leave
+                it empty if you just want a quick overview.
+              </div>
+            </div>
+
+            <button id="submit-btn" type="submit">
+              <span>Analyze Datasets</span>
+            </button>
+          </form>
+
+          <div id="status" class="status"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              Uploaded datasets
+              <span id="dataset-count" class="badge" style="display: none"></span>
+            </div>
+          </div>
+
+          <div id="summary">
+            <p class="muted">No datasets analyzed yet. Upload CSVs to see roles and stats.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 16px">
+        <div class="card-header">
+          <div class="card-title">Per-dataset details & EDA</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.8fr); gap: 12px">
+          <div id="datasets-list" class="scroll" style="max-height: 320px; padding: 6px 4px"></div>
+
+          <div class="scroll" style="max-height: 320px; padding: 6px 8px">
+            <div class="section-title">STEP 3 · EDA Overview</div>
+            <div id="eda-summary" class="muted" style="font-size: 12px">
+              Select a dataset and click “Run EDA” to see stats and plots here.
+            </div>
+            <div id="eda-plots" style="margin-top: 6px; font-size: 11px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 16px">
+        <div class="card-header">
+          <div class="card-title">STEP 4 · Data Preprocessing</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px">
+          <div>
+            <div class="section-title">Preprocessing Options</div>
+            <form id="preprocessing-form" style="font-size: 12px">
+              <div class="input-row">
+                <label for="preprocessing-dataset">Select FACT dataset</label>
+                <select
+                  id="preprocessing-dataset"
+                  name="dataset_id"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                  required
+                >
+                  <option value="">-- Select dataset --</option>
+                </select>
+              </div>
+
+              <div class="input-row">
+                <label for="preprocessing-target">Target column</label>
+                <input
+                  id="preprocessing-target"
+                  name="target_column"
+                  type="text"
+                  placeholder="e.g. audience_count"
+                  required
+                />
+              </div>
+
+              <div class="input-row">
+                <label for="preprocessing-problem-type">Problem type</label>
+                <select
+                  id="preprocessing-problem-type"
+                  name="problem_type"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                  required
+                >
+                  <option value="regression">Regression</option>
+                  <option value="binary_classification">Binary Classification</option>
+                  <option value="multiclass_classification">Multiclass Classification</option>
+                </select>
+              </div>
+
+              <div class="input-row">
+                <label for="preprocessing-missing">Handle missing values</label>
+                <select
+                  id="preprocessing-missing"
+                  name="handle_missing"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                >
+                  <option value="mean">Mean (numeric)</option>
+                  <option value="median">Median (numeric)</option>
+                  <option value="mode">Mode (categorical)</option>
+                  <option value="forward_fill">Forward fill</option>
+                  <option value="drop">Drop rows</option>
+                </select>
+              </div>
+
+              <div class="input-row">
+                <label for="preprocessing-scale">Scale numerical</label>
+                <select
+                  id="preprocessing-scale"
+                  name="scale_numerical"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                >
+                  <option value="standard">StandardScaler</option>
+                  <option value="minmax">MinMaxScaler</option>
+                  <option value="robust">RobustScaler</option>
+                  <option value="none">No scaling</option>
+                </select>
+              </div>
+
+              <div class="input-row">
+                <label for="preprocessing-encode">Encode categorical</label>
+                <select
+                  id="preprocessing-encode"
+                  name="encode_categorical"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                >
+                  <option value="onehot">One-Hot Encoding</option>
+                  <option value="label">Label Encoding</option>
+                  <option value="none">No encoding</option>
+                </select>
+              </div>
+
+              <div class="input-row">
+                <label for="preprocessing-outliers">Handle outliers</label>
+                <select
+                  id="preprocessing-outliers"
+                  name="handle_outliers"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                >
+                  <option value="clip">Clip (IQR)</option>
+                  <option value="remove">Remove rows</option>
+                  <option value="none">No handling</option>
+                </select>
+              </div>
+
+              <div class="input-row">
+                <label for="preprocessing-test-size">Test size</label>
+                <input
+                  id="preprocessing-test-size"
+                  name="test_size"
+                  type="number"
+                  min="0.1"
+                  max="0.5"
+                  step="0.05"
+                  value="0.2"
+                  style="width: 100%"
+                />
+              </div>
+
+              <button id="preprocessing-submit-btn" type="submit" style="width: 100%; margin-top: 8px">
+                Run Preprocessing Pipeline
+              </button>
+            </form>
+            <div id="preprocessing-status" class="status" style="margin-top: 6px"></div>
+          </div>
+
+          <div>
+            <div class="section-title">Preprocessing Results</div>
+            <div id="preprocessing-results" class="muted" style="font-size: 12px">
+              Configure options and run preprocessing to see train/test splits and summary here.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById("intake-form");
+      const statusEl = document.getElementById("status");
+      const submitBtn = document.getElementById("submit-btn");
+      const summaryEl = document.getElementById("summary");
+      const datasetCountEl = document.getElementById("dataset-count");
+      const datasetsListEl = document.getElementById("datasets-list");
+      const edaSummaryEl = document.getElementById("eda-summary");
+      const edaPlotsEl = document.getElementById("eda-plots");
+
+      function setStatus(message, type = "") {
+        statusEl.textContent = message;
+        statusEl.className = "status " + (type || "");
+      }
+
+      function formatPct(value) {
+        if (value === null || value === undefined || isNaN(value)) return "—";
+        return (value * 100).toFixed(1) + "%";
+      }
+
+      function escapeHtml(str) {
+        if (str === null || str === undefined) return "";
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const fileInput = document.getElementById("csv-file");
+        const targetInput = document.getElementById("target-column");
+        const files = fileInput.files;
+        const target = targetInput.value.trim();
+
+        if (!files || !files.length) {
+          setStatus("Please select at least one CSV file.", "error");
+          return;
+        }
+
+        const formData = new FormData();
+        Array.from(files).forEach((f) => formData.append("files", f));
+        if (target) formData.append("target_column", target);
+
+        submitBtn.disabled = true;
+        setStatus("Running intake…", "");
+
+        try {
+          const resp = await fetch("/api/upload-datasets", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!resp.ok) {
+            const errText = await resp.text();
+            let msg = "Request failed: " + resp.status;
+            try {
+              const json = JSON.parse(errText);
+              if (json.detail) msg = json.detail;
+            } catch (_) {
+              // ignore parsing errors
+            }
+            throw new Error(msg);
+          }
+
+          const data = await resp.json();
+          renderDatasetsOverview(data.datasets || []);
+          setStatus("Dataset analysis completed successfully.", "ok");
+        } catch (err) {
+          console.error(err);
+          setStatus(err.message || "Something went wrong.", "error");
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+
+      let currentDatasets = [];
+
+      function renderDatasetsOverview(datasets) {
+        currentDatasets = datasets;
+        if (!datasets.length) {
+          summaryEl.innerHTML = "<p class='muted'>No datasets analyzed yet.</p>";
+          datasetCountEl.style.display = "none";
+          datasetsListEl.innerHTML = "";
+          edaSummaryEl.textContent =
+            "Select a dataset and click “Run EDA” to see stats and plots here.";
+          edaPlotsEl.innerHTML = "";
+          return;
+        }
+
+        datasetCountEl.style.display = "inline-flex";
+        datasetCountEl.textContent = `${datasets.length} dataset(s)`;
+
+        // High-level summary pills
+        const facts = datasets.filter((d) => d.role === "fact").length;
+        const dims = datasets.filter((d) => d.role === "dimension").length;
+        const txs = datasets.filter((d) => d.role === "transaction").length;
+
+        summaryEl.innerHTML =
+          `<div class="pill"><span class="pill-dot"></span><span>${datasets.length} total datasets</span></div>` +
+          `<div class="pill"><span class="pill-dot"></span><span>${facts} FACT · ${dims} DIMENSION · ${txs} TRANSACTION</span></div>`;
+
+        // Detailed cards
+        datasetsListEl.innerHTML = "";
+        datasets.forEach((d) => {
+          const card = document.createElement("div");
+          card.style.borderBottom = "1px solid rgba(30,64,175,0.6)";
+          card.style.padding = "6px 4px 8px";
+
+          const title = document.createElement("div");
+          title.style.display = "flex";
+          title.style.justifyContent = "space-between";
+          title.style.alignItems = "center";
+          title.innerHTML =
+            `<span><strong>${escapeHtml(d.filename)}</strong></span>` +
+            `<span class="badge">${escapeHtml(d.role.toUpperCase())}</span>`;
+          card.appendChild(title);
+
+          const meta = document.createElement("div");
+          meta.className = "muted";
+          meta.style.fontSize = "11px";
+          meta.style.marginTop = "2px";
+          meta.textContent = `${d.summary.n_rows} rows · ${d.summary.n_cols} columns · target: ${
+            d.target_present === "yes" ? "present" : "absent"
+          }`;
+          card.appendChild(meta);
+
+          const actions = document.createElement("div");
+          actions.style.marginTop = "4px";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.style.fontSize = "11px";
+          btn.style.padding = "4px 10px";
+          btn.textContent = "Run EDA";
+          btn.addEventListener("click", () => runEdaForDataset(d.id));
+          actions.appendChild(btn);
+          card.appendChild(actions);
+
+          datasetsListEl.appendChild(card);
+        });
+      }
+
+      async function runEdaForDataset(datasetId) {
+        const targetInput = document.getElementById("target-column");
+        const target = targetInput.value.trim();
+
+        const formData = new FormData();
+        formData.append("dataset_id", String(datasetId));
+        if (target) formData.append("target_column", target);
+
+        edaSummaryEl.textContent = "Running EDA…";
+        edaPlotsEl.innerHTML = "";
+
+        try {
+          const resp = await fetch("/api/eda", {
+            method: "POST",
+            body: formData,
+          });
+          if (!resp.ok) {
+            const errText = await resp.text();
+            let msg = "Request failed: " + resp.status;
+            try {
+              const json = JSON.parse(errText);
+              if (json.detail) msg = json.detail;
+            } catch (_) {}
+            throw new Error(msg);
+          }
+          const eda = await resp.json();
+          renderEda(eda);
+        } catch (err) {
+          console.error(err);
+          edaSummaryEl.textContent = err.message || "Failed to run EDA.";
+          edaPlotsEl.innerHTML = "";
+        }
+      }
+
+      function renderEda(eda) {
+        if (!eda || !eda.summary) {
+          edaSummaryEl.textContent = "No EDA summary available.";
+          edaPlotsEl.innerHTML = "";
+          return;
+        }
+
+        const s = eda.summary;
+        const shape = s.shape || {};
+        const outliers = s.outliers_iqr || {};
+        const numCols = Object.keys(s.numeric || {}).length;
+        const catCols = Object.keys(s.categorical || {}).length;
+
+        edaSummaryEl.innerHTML =
+          `<div><span class="muted">Shape:</span> <strong>${shape.n_rows ?? "?"}</strong> rows × <strong>${
+            shape.n_cols ?? "?"
+          }</strong> columns</div>` +
+          `<div><span class="muted">Numeric columns:</span> <strong>${numCols}</strong> · <span class="muted">Categorical:</span> <strong>${catCols}</strong></div>` +
+          `<div><span class="muted">Outliers (IQR) – top columns:</span> ${renderTopOutliers(outliers)}</div>`;
+
+        // Plots
+        edaPlotsEl.innerHTML = "";
+        const urls = eda.plot_urls || {};
+        const keys = Object.keys(urls);
+        if (!keys.length) {
+          edaPlotsEl.innerHTML = "<span class='muted'>No plots generated.</span>";
+          return;
+        }
+
+        keys.forEach((key) => {
+          const url = urls[key];
+          const wrapper = document.createElement("div");
+          wrapper.style.marginBottom = "6px";
+          const label = document.createElement("div");
+          label.className = "muted";
+          label.textContent =
+            key === "target_distribution"
+              ? "Target distribution"
+              : key === "correlation_heatmap"
+              ? "Correlation heatmap"
+              : key === "missing_values"
+              ? "Missing values"
+              : key;
+          const img = document.createElement("img");
+          img.src = url;
+          img.alt = key;
+          img.style.maxWidth = "100%";
+          img.style.borderRadius = "6px";
+          img.style.border = "1px solid rgba(30,64,175,0.7)";
+          img.style.marginTop = "2px";
+          wrapper.appendChild(label);
+          wrapper.appendChild(img);
+          edaPlotsEl.appendChild(wrapper);
+        });
+      }
+
+      function renderTopOutliers(outliers) {
+        const entries = Object.entries(outliers || {});
+        if (!entries.length) return "<span class='muted'>no numeric columns</span>";
+        entries.sort((a, b) => b[1] - a[1]);
+        const top = entries.slice(0, 3);
+        return top
+          .map(([col, cnt]) => `<strong>${escapeHtml(col)}</strong>: ${cnt}`)
+          .join(", ");
+      }
+
+      // Preprocessing form handler
+      const preprocessingForm = document.getElementById("preprocessing-form");
+      const preprocessingSubmitBtn = document.getElementById("preprocessing-submit-btn");
+      const preprocessingStatusEl = document.getElementById("preprocessing-status");
+      const preprocessingResultsEl = document.getElementById("preprocessing-results");
+      const preprocessingDatasetSelect = document.getElementById("preprocessing-dataset");
+
+      function updatePreprocessingDatasetSelect() {
+        preprocessingDatasetSelect.innerHTML = '<option value="">-- Select dataset --</option>';
+        currentDatasets
+          .filter((d) => d.role === "fact" || d.target_present === "yes")
+          .forEach((d) => {
+            const opt = document.createElement("option");
+            opt.value = d.id;
+            opt.textContent = `${d.filename} (${d.role})`;
+            preprocessingDatasetSelect.appendChild(opt);
+          });
+      }
+
+      preprocessingForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData(preprocessingForm);
+        const datasetId = parseInt(formData.get("dataset_id"));
+        const targetColumn = formData.get("target_column").trim();
+        const problemType = formData.get("problem_type");
+
+        if (!datasetId || !targetColumn) {
+          preprocessingStatusEl.textContent = "Please select dataset and enter target column.";
+          preprocessingStatusEl.className = "status error";
+          return;
+        }
+
+        preprocessingSubmitBtn.disabled = true;
+        preprocessingStatusEl.textContent = "Running preprocessing pipeline…";
+        preprocessingStatusEl.className = "status";
+
+        try {
+          const resp = await fetch("/api/preprocessing", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!resp.ok) {
+            const errText = await resp.text();
+            let msg = "Request failed: " + resp.status;
+            try {
+              const json = JSON.parse(errText);
+              if (json.detail) msg = json.detail;
+            } catch (_) {}
+            throw new Error(msg);
+          }
+
+          const result = await resp.json();
+          renderPreprocessingResults(result);
+          preprocessingStatusEl.textContent = "Preprocessing completed successfully.";
+          preprocessingStatusEl.className = "status ok";
+        } catch (err) {
+          console.error(err);
+          preprocessingStatusEl.textContent = err.message || "Preprocessing failed.";
+          preprocessingStatusEl.className = "status error";
+        } finally {
+          preprocessingSubmitBtn.disabled = false;
+        }
+      });
+
+      function renderPreprocessingResults(result) {
+        const summary = result.preprocessing_summary || {};
+        const steps = summary.steps_applied || [];
+
+        preprocessingResultsEl.innerHTML =
+          `<div class="pill"><span class="pill-dot"></span><span>Train: ${result.n_train} rows · Test: ${result.n_test} rows</span></div>` +
+          `<div class="pill"><span class="pill-dot"></span><span>Features: ${result.n_features}</span></div>` +
+          `<div class="pill"><span class="pill-dot"></span><span>Target: ${escapeHtml(result.target_name)}</span></div>` +
+          `<div style="margin-top: 8px"><div class="section-title">Steps Applied</div><ul class="sanity-list">${steps
+            .map((s) => `<li>${escapeHtml(s)}</li>`)
+            .join("")}</ul></div>` +
+          (summary.columns_dropped && summary.columns_dropped.length > 0
+            ? `<div style="margin-top: 6px"><div class="section-title">Columns Dropped</div><div class="muted" style="font-size: 11px">${summary.columns_dropped
+                .slice(0, 10)
+                .map((c) => escapeHtml(c))
+                .join(", ")}${summary.columns_dropped.length > 10 ? "…" : ""}</div></div>`
+            : "") +
+          `<div style="margin-top: 8px"><div class="section-title">Shape Progression</div><div class="muted" style="font-size: 11px">` +
+          `Initial: ${summary.initial_shape ? summary.initial_shape.join(" × ") : "—"} → ` +
+          `Final: ${result.n_train + result.n_test} × ${result.n_features + 1}</div></div>`;
+      }
+
+      // Update preprocessing dataset dropdown when datasets are loaded
+      const originalRenderDatasets = renderDatasetsOverview;
+      renderDatasetsOverview = function (datasets) {
+        originalRenderDatasets(datasets);
+        updatePreprocessingDatasetSelect();
+      };
+
+      // On load, try to fetch existing datasets so UI remembers previous runs
+      (async () => {
+        try {
+          const resp = await fetch("/api/datasets");
+          if (!resp.ok) return;
+          const data = await resp.json();
+          renderDatasetsOverview(data.datasets || []);
+        } catch (e) {
+          // ignore
+        }
+      })();
+    </script>
+  </body>
+  </html>
+
