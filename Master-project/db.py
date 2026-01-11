@@ -34,6 +34,8 @@ class DatasetRecord(Base):
     n_cols: int = Column(Integer, nullable=False)
     detected_role: str = Column(String, nullable=False)  # fact / dimension / transaction
     target_present: str = Column(String, nullable=True)  # "yes" / "no" / None
+    problem_type: str = Column(String, nullable=True)  # classification / regression / clustering / dimensionality_reduction / anomaly_detection / recommendation / time_series
+    problem_subtype: str = Column(String, nullable=True)  # binary_classification / multiclass_classification / multilabel_classification
     created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 

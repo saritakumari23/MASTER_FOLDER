@@ -341,6 +341,92 @@
         </div>
       </div>
 
+      <div class="card" style="margin-top: 16px">
+        <div class="card-header">
+          <div class="card-title">STEP 4 · Problem Identification</div>
+          <span class="card-tag">Required</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px">
+          <div>
+            <div class="section-title">Select Problem Type</div>
+            <form id="problem-type-form" style="font-size: 12px">
+              <div class="input-row">
+                <label for="problem-type-dataset">Select Dataset</label>
+                <select
+                  id="problem-type-dataset"
+                  name="dataset_id"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                  required
+                >
+                  <option value="">-- Select dataset --</option>
+                </select>
+              </div>
+
+              <div class="input-row">
+                <label for="problem-type">Problem Type</label>
+                <select
+                  id="problem-type"
+                  name="problem_type"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                  required
+                >
+                  <option value="">-- Select problem type --</option>
+                  <option value="classification">1️⃣ Classification (Predict category/class)</option>
+                  <option value="regression">2️⃣ Regression (Predict continuous value)</option>
+                  <option value="clustering">3️⃣ Clustering (Group similar data)</option>
+                  <option value="dimensionality_reduction">4️⃣ Dimensionality Reduction (Reduce features)</option>
+                  <option value="anomaly_detection">5️⃣ Anomaly/Outlier Detection (Detect unusual patterns)</option>
+                  <option value="recommendation">6️⃣ Recommendation Systems (Suggest items)</option>
+                  <option value="time_series">7️⃣ Time Series Forecasting (Predict future values)</option>
+                </select>
+                <div class="hint">
+                  Select the type of ML problem you want to solve with this dataset.
+                </div>
+              </div>
+
+              <div class="input-row" id="problem-subtype-row" style="display: none">
+                <label for="problem-subtype">Classification Subtype</label>
+                <select
+                  id="problem-subtype"
+                  name="problem_subtype"
+                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
+                >
+                  <option value="">-- Select subtype --</option>
+                  <option value="binary_classification">Binary Classification (Yes/No, 2 classes)</option>
+                  <option value="multiclass_classification">Multi-class Classification (3+ classes)</option>
+                  <option value="multilabel_classification">Multi-label Classification (Multiple tags)</option>
+                </select>
+                <div class="hint">
+                  Required for classification problems.
+                </div>
+              </div>
+
+              <button id="problem-type-submit-btn" type="submit" style="width: 100%; margin-top: 8px">
+                Save Problem Type
+              </button>
+            </form>
+            <div id="problem-type-status" class="status" style="margin-top: 6px"></div>
+          </div>
+
+          <div>
+            <div class="section-title">Problem Type Information</div>
+            <div id="problem-type-info" class="muted" style="font-size: 12px; line-height: 1.6">
+              <p><strong>Select a problem type to see details:</strong></p>
+              <ul class="sanity-list" style="margin-top: 8px">
+                <li><strong>Classification:</strong> Spam detection, fraud detection, disease prediction</li>
+                <li><strong>Regression:</strong> House price, salary prediction, temperature forecasting</li>
+                <li><strong>Clustering:</strong> Customer segmentation, document grouping</li>
+                <li><strong>Dimensionality Reduction:</strong> PCA, data visualization, noise removal</li>
+                <li><strong>Anomaly Detection:</strong> Fraud detection, network intrusion, fault detection</li>
+                <li><strong>Recommendation:</strong> Movie/product/music recommendations</li>
+                <li><strong>Time Series:</strong> Stock prices, sales forecasting, weather prediction</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <script>
@@ -681,6 +767,119 @@
           .map(([col, cnt]) => `<strong>${escapeHtml(col)}</strong>: ${cnt}`)
           .join(", ");
       }
+
+      // Problem Type form handler
+      const problemTypeForm = document.getElementById("problem-type-form");
+      const problemTypeDatasetSelect = document.getElementById("problem-type-dataset");
+      const problemTypeSelect = document.getElementById("problem-type");
+      const problemSubtypeRow = document.getElementById("problem-subtype-row");
+      const problemSubtypeSelect = document.getElementById("problem-subtype");
+      const problemTypeSubmitBtn = document.getElementById("problem-type-submit-btn");
+      const problemTypeStatusEl = document.getElementById("problem-type-status");
+      const problemTypeInfoEl = document.getElementById("problem-type-info");
+
+      // Show/hide subtype based on problem type
+      problemTypeSelect.addEventListener("change", (e) => {
+        if (e.target.value === "classification") {
+          problemSubtypeRow.style.display = "block";
+          problemSubtypeSelect.required = true;
+        } else {
+          problemSubtypeRow.style.display = "none";
+          problemSubtypeSelect.required = false;
+          problemSubtypeSelect.value = "";
+        }
+      });
+
+      function updateProblemTypeDatasetSelect() {
+        problemTypeDatasetSelect.innerHTML = '<option value="">-- Select dataset --</option>';
+        currentDatasets
+          .filter((d) => d.role === "fact" || d.target_present === "yes")
+          .forEach((d) => {
+            const opt = document.createElement("option");
+            opt.value = d.id;
+            let label = `${d.filename} (${d.role})`;
+            if (d.problem_type) {
+              label += ` - ${d.problem_type}`;
+              if (d.problem_subtype) label += ` (${d.problem_subtype})`;
+            }
+            opt.textContent = label;
+            problemTypeDatasetSelect.appendChild(opt);
+            
+            // Pre-select problem type if already saved
+            if (d.problem_type) {
+              opt.selected = false; // Don't auto-select, but show in label
+            }
+          });
+      }
+
+      problemTypeForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData(problemTypeForm);
+        const datasetId = parseInt(formData.get("dataset_id"));
+        const problemType = formData.get("problem_type");
+        const problemSubtype = formData.get("problem_subtype");
+
+        if (!datasetId || !problemType) {
+          problemTypeStatusEl.textContent = "Please select dataset and problem type.";
+          problemTypeStatusEl.className = "status error";
+          return;
+        }
+
+        if (problemType === "classification" && !problemSubtype) {
+          problemTypeStatusEl.textContent = "Please select a classification subtype.";
+          problemTypeStatusEl.className = "status error";
+          return;
+        }
+
+        problemTypeSubmitBtn.disabled = true;
+        problemTypeStatusEl.textContent = "Saving problem type…";
+        problemTypeStatusEl.className = "status";
+
+        try {
+          const resp = await fetch("/api/problem-type", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!resp.ok) {
+            const errText = await resp.text();
+            let msg = "Request failed: " + resp.status;
+            try {
+              const json = JSON.parse(errText);
+              if (json.detail) msg = json.detail;
+            } catch (_) {}
+            throw new Error(msg);
+          }
+
+          const result = await resp.json();
+          problemTypeStatusEl.textContent = `Problem type saved: ${result.problem_type}${result.problem_subtype ? ` (${result.problem_subtype})` : ""}`;
+          problemTypeStatusEl.className = "status ok";
+          
+          // Update dataset list to reflect saved problem type
+          updateProblemTypeDatasetSelect();
+          
+          // Refresh datasets overview
+          const datasetsResp = await fetch("/api/datasets");
+          if (datasetsResp.ok) {
+            const datasetsData = await datasetsResp.json();
+            renderDatasetsOverview(datasetsData.datasets || []);
+          }
+        } catch (err) {
+          console.error(err);
+          problemTypeStatusEl.textContent = err.message || "Failed to save problem type.";
+          problemTypeStatusEl.className = "status error";
+        } finally {
+          problemTypeSubmitBtn.disabled = false;
+        }
+      });
+
+      // Update dataset dropdown when datasets are loaded
+      const originalRenderDatasets = renderDatasetsOverview;
+      renderDatasetsOverview = function (datasets) {
+        originalRenderDatasets(datasets);
+        updateProblemTypeDatasetSelect();
+      };
 
       // On load, try to fetch existing datasets so UI remembers previous runs
       (async () => {

@@ -165,6 +165,8 @@ def list_datasets() -> Dict[str, Any]:
             "n_cols": r.n_cols,
             "role": r.detected_role,
             "target_present": r.target_present,
+            "problem_type": r.problem_type,
+            "problem_subtype": r.problem_subtype,
             "created_at": r.created_at.isoformat(),
         }
         for r in records
@@ -214,6 +216,74 @@ def run_eda_for_dataset(
     eda_dict["plot_urls"] = plot_urls
 
     return eda_dict
+
+
+@app.post("/api/problem-type")
+def save_problem_type(
+    dataset_id: int = Form(...),
+    problem_type: str = Form(...),
+    problem_subtype: str | None = Form(None),
+) -> Dict[str, Any]:
+    """
+    STEP 4: Save problem type identification for a dataset.
+
+    Problem types:
+    - classification (with subtypes: binary_classification, multiclass_classification, multilabel_classification)
+    - regression
+    - clustering
+    - dimensionality_reduction
+    - anomaly_detection
+    - recommendation
+    - time_series
+    """
+    session = get_session()
+    record = session.query(DatasetRecord).filter(DatasetRecord.id == dataset_id).first()
+
+    if record is None:
+        session.close()
+        raise HTTPException(status_code=404, detail=f"Dataset with id={dataset_id} not found.")
+
+    # Validate problem type
+    valid_types = [
+        "classification",
+        "regression",
+        "clustering",
+        "dimensionality_reduction",
+        "anomaly_detection",
+        "recommendation",
+        "time_series",
+    ]
+    if problem_type not in valid_types:
+        session.close()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid problem type. Must be one of: {', '.join(valid_types)}",
+        )
+
+    # Validate subtype if classification
+    if problem_type == "classification" and problem_subtype:
+        valid_subtypes = ["binary_classification", "multiclass_classification", "multilabel_classification"]
+        if problem_subtype not in valid_subtypes:
+            session.close()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid problem subtype. Must be one of: {', '.join(valid_subtypes)}",
+            )
+
+    # Update record
+    record.problem_type = problem_type
+    record.problem_subtype = problem_subtype
+    session.commit()
+    session.refresh(record)
+    session.close()
+
+    return {
+        "dataset_id": record.id,
+        "filename": record.filename,
+        "problem_type": record.problem_type,
+        "problem_subtype": record.problem_subtype,
+        "message": "Problem type saved successfully",
+    }
 
 
 # Preprocessing endpoint temporarily removed
