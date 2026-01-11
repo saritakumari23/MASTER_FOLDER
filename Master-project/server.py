@@ -12,7 +12,8 @@ import json
 
 from db import DatasetRecord, PreprocessingConfigRecord, get_session, init_db
 from eda_core import run_basic_eda
-from preprocessing_core import PreprocessingConfig, run_preprocessing_pipeline
+# Preprocessing temporarily removed
+# from preprocessing_core import PreprocessingConfig, run_preprocessing_pipeline
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -215,75 +216,76 @@ def run_eda_for_dataset(
     return eda_dict
 
 
-@app.post("/api/preprocessing")
-def run_preprocessing(
-    dataset_id: int = Form(...),
-    target_column: str = Form(...),
-    problem_type: str = Form(...),  # regression / binary_classification / multiclass_classification
-    handle_missing: str = Form("mean"),
-    drop_duplicates: str = Form(None),  # Optional, default to "true"
-    scale_numerical: str = Form("standard"),
-    encode_categorical: str = Form("onehot"),
-    handle_outliers: str = Form("clip"),
-    test_size: str = Form("0.2"),  # Accept as string, convert to float
-) -> Dict[str, Any]:
-    """
-    STEP 4: Run preprocessing pipeline on a dataset.
-
-    Returns preprocessed train/test splits and summary.
-    """
-    session = get_session()
-    record = session.query(DatasetRecord).filter(DatasetRecord.id == dataset_id).first()
-    session.close()
-
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"Dataset with id={dataset_id} not found.")
-
-    csv_path = Path(record.stored_path)
-    if not csv_path.exists():
-        raise HTTPException(status_code=404, detail=f"CSV not found on disk: {csv_path}")
-
-    try:
-        df = pd.read_csv(csv_path)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {exc}")
-
-    if target_column not in df.columns:
-        raise HTTPException(
-            status_code=400, detail=f"Target column '{target_column}' not found in dataset."
-        )
-
-    # Create preprocessing config
-    config = PreprocessingConfig(
-        handle_missing=handle_missing,
-        drop_duplicates=(drop_duplicates or "true").lower() == "true",
-        scale_numerical=scale_numerical,
-        encode_categorical=encode_categorical,
-        handle_outliers=handle_outliers,
-        test_size=float(test_size),
-    )
-
-    # Run preprocessing pipeline
-    try:
-        result = run_preprocessing_pipeline(df, target_column, config, problem_type)
-    except Exception as exc:
-        import traceback
-        error_detail = f"Preprocessing failed: {str(exc)}\n{traceback.format_exc()}"
-        raise HTTPException(status_code=400, detail=error_detail)
-
-    # Save config to DB
-    session = get_session()
-    config_record = PreprocessingConfigRecord(
-        dataset_id=dataset_id,
-        target_column=target_column,
-        problem_type=problem_type,
-        config_json=json.dumps(config.__dict__),
-    )
-    session.add(config_record)
-    session.commit()
-    session.close()
-
-    return result.to_dict()
+# Preprocessing endpoint temporarily removed
+# @app.post("/api/preprocessing")
+# def run_preprocessing(
+#     dataset_id: int = Form(...),
+#     target_column: str = Form(...),
+#     problem_type: str = Form(...),  # regression / binary_classification / multiclass_classification
+#     handle_missing: str = Form("mean"),
+#     drop_duplicates: str = Form(None),  # Optional, default to "true"
+#     scale_numerical: str = Form("standard"),
+#     encode_categorical: str = Form("onehot"),
+#     handle_outliers: str = Form("clip"),
+#     test_size: str = Form("0.2"),  # Accept as string, convert to float
+# ) -> Dict[str, Any]:
+#     """
+#     STEP 4: Run preprocessing pipeline on a dataset.
+#
+#     Returns preprocessed train/test splits and summary.
+#     """
+#     session = get_session()
+#     record = session.query(DatasetRecord).filter(DatasetRecord.id == dataset_id).first()
+#     session.close()
+#
+#     if record is None:
+#         raise HTTPException(status_code=404, detail=f"Dataset with id={dataset_id} not found.")
+#
+#     csv_path = Path(record.stored_path)
+#     if not csv_path.exists():
+#         raise HTTPException(status_code=404, detail=f"CSV not found on disk: {csv_path}")
+#
+#     try:
+#         df = pd.read_csv(csv_path)
+#     except Exception as exc:
+#         raise HTTPException(status_code=400, detail=f"Failed to read CSV: {exc}")
+#
+#     if target_column not in df.columns:
+#         raise HTTPException(
+#             status_code=400, detail=f"Target column '{target_column}' not found in dataset."
+#         )
+#
+#     # Create preprocessing config
+#     config = PreprocessingConfig(
+#         handle_missing=handle_missing,
+#         drop_duplicates=(drop_duplicates or "true").lower() == "true",
+#         scale_numerical=scale_numerical,
+#         encode_categorical=encode_categorical,
+#         handle_outliers=handle_outliers,
+#         test_size=float(test_size),
+#     )
+#
+#     # Run preprocessing pipeline
+#     try:
+#         result = run_preprocessing_pipeline(df, target_column, config, problem_type)
+#     except Exception as exc:
+#         import traceback
+#         error_detail = f"Preprocessing failed: {str(exc)}\n{traceback.format_exc()}"
+#         raise HTTPException(status_code=400, detail=error_detail)
+#
+#     # Save config to DB
+#     session = get_session()
+#     config_record = PreprocessingConfigRecord(
+#         dataset_id=dataset_id,
+#         target_column=target_column,
+#         problem_type=problem_type,
+#         config_json=json.dumps(config.__dict__),
+#     )
+#     session.add(config_record)
+#     session.commit()
+#     session.close()
+#
+#     return result.to_dict()
 
 
 # Serve generated EDA plots (mount this before root static so /eda is not shadowed)

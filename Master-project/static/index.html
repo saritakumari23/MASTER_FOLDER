@@ -341,136 +341,6 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top: 16px">
-        <div class="card-header">
-          <div class="card-title">STEP 4 · Data Preprocessing</div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px">
-          <div>
-            <div class="section-title">Preprocessing Options</div>
-            <form id="preprocessing-form" style="font-size: 12px">
-              <div class="input-row">
-                <label for="preprocessing-dataset">Select FACT dataset</label>
-                <select
-                  id="preprocessing-dataset"
-                  name="dataset_id"
-                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
-                  required
-                >
-                  <option value="">-- Select dataset --</option>
-                </select>
-              </div>
-
-              <div class="input-row">
-                <label for="preprocessing-target">Target column</label>
-                <input
-                  id="preprocessing-target"
-                  name="target_column"
-                  type="text"
-                  placeholder="e.g. audience_count"
-                  required
-                />
-              </div>
-
-              <div class="input-row">
-                <label for="preprocessing-problem-type">Problem type</label>
-                <select
-                  id="preprocessing-problem-type"
-                  name="problem_type"
-                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
-                  required
-                >
-                  <option value="regression">Regression</option>
-                  <option value="binary_classification">Binary Classification</option>
-                  <option value="multiclass_classification">Multiclass Classification</option>
-                </select>
-              </div>
-
-              <div class="input-row">
-                <label for="preprocessing-missing">Handle missing values</label>
-                <select
-                  id="preprocessing-missing"
-                  name="handle_missing"
-                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
-                >
-                  <option value="mean">Mean (numeric)</option>
-                  <option value="median">Median (numeric)</option>
-                  <option value="mode">Mode (categorical)</option>
-                  <option value="forward_fill">Forward fill</option>
-                  <option value="drop">Drop rows</option>
-                </select>
-              </div>
-
-              <div class="input-row">
-                <label for="preprocessing-scale">Scale numerical</label>
-                <select
-                  id="preprocessing-scale"
-                  name="scale_numerical"
-                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
-                >
-                  <option value="standard">StandardScaler</option>
-                  <option value="minmax">MinMaxScaler</option>
-                  <option value="robust">RobustScaler</option>
-                  <option value="none">No scaling</option>
-                </select>
-              </div>
-
-              <div class="input-row">
-                <label for="preprocessing-encode">Encode categorical</label>
-                <select
-                  id="preprocessing-encode"
-                  name="encode_categorical"
-                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
-                >
-                  <option value="onehot">One-Hot Encoding</option>
-                  <option value="label">Label Encoding</option>
-                  <option value="none">No encoding</option>
-                </select>
-              </div>
-
-              <div class="input-row">
-                <label for="preprocessing-outliers">Handle outliers</label>
-                <select
-                  id="preprocessing-outliers"
-                  name="handle_outliers"
-                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
-                >
-                  <option value="clip">Clip (IQR)</option>
-                  <option value="remove">Remove rows</option>
-                  <option value="none">No handling</option>
-                </select>
-              </div>
-
-              <div class="input-row">
-                <label for="preprocessing-test-size">Test size</label>
-                <input
-                  id="preprocessing-test-size"
-                  name="test_size"
-                  type="number"
-                  min="0.1"
-                  max="0.5"
-                  step="0.05"
-                  value="0.2"
-                  style="width: 100%"
-                />
-              </div>
-
-              <button id="preprocessing-submit-btn" type="submit" style="width: 100%; margin-top: 8px">
-                Run Preprocessing Pipeline
-              </button>
-            </form>
-            <div id="preprocessing-status" class="status" style="margin-top: 6px"></div>
-          </div>
-
-          <div>
-            <div class="section-title">Preprocessing Results</div>
-            <div id="preprocessing-results" class="muted" style="font-size: 12px">
-              Configure options and run preprocessing to see train/test splits and summary here.
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <script>
@@ -661,18 +531,59 @@
 
         const s = eda.summary;
         const shape = s.shape || {};
-        const outliers = s.outliers_iqr || {};
+        const outliersIqr = s.outliers_iqr || {};
+        const outliersZscore = s.outliers_zscore || {};
         const numCols = Object.keys(s.numeric || {}).length;
         const catCols = Object.keys(s.categorical || {}).length;
+        const corrAnalysis = s.correlation_analysis || {};
+        const numericAdvanced = s.numeric_advanced || {};
 
-        edaSummaryEl.innerHTML =
+        // Build summary HTML with advanced stats
+        let summaryHtml = 
           `<div><span class="muted">Shape:</span> <strong>${shape.n_rows ?? "?"}</strong> rows × <strong>${
             shape.n_cols ?? "?"
           }</strong> columns</div>` +
-          `<div><span class="muted">Numeric columns:</span> <strong>${numCols}</strong> · <span class="muted">Categorical:</span> <strong>${catCols}</strong></div>` +
-          `<div><span class="muted">Outliers (IQR) – top columns:</span> ${renderTopOutliers(outliers)}</div>`;
+          `<div><span class="muted">Numeric columns:</span> <strong>${numCols}</strong> · <span class="muted">Categorical:</span> <strong>${catCols}</strong></div>`;
+        
+        // Add outlier summary
+        if (Object.keys(outliersIqr).length > 0) {
+          summaryHtml += `<div><span class="muted">Outliers (IQR) – top:</span> ${renderTopOutliers(outliersIqr)}</div>`;
+        }
+        
+        // Add correlation analysis summary
+        if (corrAnalysis.overall) {
+          const overall = corrAnalysis.overall;
+          summaryHtml += `<div><span class="muted">Avg |correlation|:</span> <strong>${(overall.mean_absolute_correlation || 0).toFixed(3)}</strong>`;
+          if (overall.max_correlation !== undefined) {
+            summaryHtml += ` · <span class="muted">Max |corr|:</span> <strong>${Math.abs(overall.max_correlation || 0).toFixed(3)}</strong>`;
+          }
+          summaryHtml += `</div>`;
+        }
+        
+        // Add target correlations if available
+        if (corrAnalysis.target_correlations) {
+          const targetCorrs = corrAnalysis.target_correlations;
+          const topTarget = Object.entries(targetCorrs).slice(0, 3);
+          if (topTarget.length > 0) {
+            summaryHtml += `<div><span class="muted">Top target correlations:</span> ${topTarget
+              .map(([col, val]) => `<strong>${escapeHtml(col)}</strong>: ${val.toFixed(3)}`)
+              .join(", ")}</div>`;
+          }
+        }
+        
+        // Add skewness/kurtosis info if available
+        const skewedCols = Object.entries(numericAdvanced)
+          .filter(([_, stats]) => stats.skewness !== undefined && Math.abs(stats.skewness) > 1)
+          .slice(0, 3);
+        if (skewedCols.length > 0) {
+          summaryHtml += `<div><span class="muted">Highly skewed (|skew|>1):</span> ${skewedCols
+            .map(([col, stats]) => `<strong>${escapeHtml(col)}</strong>: ${stats.skewness.toFixed(2)}`)
+            .join(", ")}</div>`;
+        }
 
-        // Plots
+        edaSummaryEl.innerHTML = summaryHtml;
+
+        // Plots with better organization
         edaPlotsEl.innerHTML = "";
         const urls = eda.plot_urls || {};
         const keys = Object.keys(urls);
@@ -681,31 +592,84 @@
           return;
         }
 
-        keys.forEach((key) => {
-          const url = urls[key];
-          const wrapper = document.createElement("div");
-          wrapper.style.marginBottom = "6px";
-          const label = document.createElement("div");
-          label.className = "muted";
-          label.textContent =
-            key === "target_distribution"
-              ? "Target distribution"
-              : key === "correlation_heatmap"
-              ? "Correlation heatmap"
-              : key === "missing_values"
-              ? "Missing values"
-              : key;
-          const img = document.createElement("img");
-          img.src = url;
-          img.alt = key;
-          img.style.maxWidth = "100%";
-          img.style.borderRadius = "6px";
-          img.style.border = "1px solid rgba(30,64,175,0.7)";
-          img.style.marginTop = "2px";
-          wrapper.appendChild(label);
-          wrapper.appendChild(img);
-          edaPlotsEl.appendChild(wrapper);
+        // Plot labels mapping
+        const plotLabels = {
+          "target_distribution": "📊 Target Distribution",
+          "target_correlations": "🎯 Target Correlations",
+          "correlation_heatmap": "🔥 Correlation Heatmap (Basic)",
+          "correlation_heatmap_advanced": "🔥 Correlation Heatmap (Advanced)",
+          "missing_values": "❌ Missing Values",
+          "boxplots_outliers": "📦 Box Plots (Outlier Detection)",
+          "distributions": "📈 Feature Distributions",
+          "pairplot_top_features": "🔗 Pair Plot (Feature Relationships)",
+        };
+
+        // Organize plots by category
+        const basicPlots = ["target_distribution", "missing_values", "target_correlations"];
+        const correlationPlots = ["correlation_heatmap", "correlation_heatmap_advanced"];
+        const advancedPlots = ["boxplots_outliers", "distributions", "pairplot_top_features"];
+
+        // Render basic plots first
+        basicPlots.forEach((key) => {
+          if (urls[key]) {
+            renderPlot(key, urls[key], plotLabels[key] || key, edaPlotsEl);
+          }
         });
+
+        // Render correlation plots
+        correlationPlots.forEach((key) => {
+          if (urls[key]) {
+            renderPlot(key, urls[key], plotLabels[key] || key, edaPlotsEl);
+            return; // Only render one correlation heatmap (prefer advanced)
+          }
+        });
+
+        // Render advanced plots
+        advancedPlots.forEach((key) => {
+          if (urls[key]) {
+            renderPlot(key, urls[key], plotLabels[key] || key, edaPlotsEl);
+          }
+        });
+
+        // Render any remaining plots
+        keys.forEach((key) => {
+          if (!basicPlots.includes(key) && !correlationPlots.includes(key) && !advancedPlots.includes(key)) {
+            renderPlot(key, urls[key], plotLabels[key] || key, edaPlotsEl);
+          }
+        });
+      }
+
+      function renderPlot(key, url, label, container) {
+        const wrapper = document.createElement("div");
+        wrapper.style.marginBottom = "12px";
+        wrapper.style.padding = "8px";
+        wrapper.style.border = "1px solid rgba(30,64,175,0.5)";
+        wrapper.style.borderRadius = "8px";
+        wrapper.style.background = "rgba(15,23,42,0.5)";
+        
+        const labelEl = document.createElement("div");
+        labelEl.className = "muted";
+        labelEl.style.fontSize = "12px";
+        labelEl.style.fontWeight = "500";
+        labelEl.style.marginBottom = "6px";
+        labelEl.textContent = label;
+        wrapper.appendChild(labelEl);
+        
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = key;
+        img.style.maxWidth = "100%";
+        img.style.borderRadius = "6px";
+        img.style.border = "1px solid rgba(30,64,175,0.7)";
+        img.style.display = "block";
+        img.style.cursor = "pointer";
+        img.onclick = () => {
+          window.open(url, "_blank");
+        };
+        img.title = "Click to open in new tab";
+        wrapper.appendChild(img);
+        
+        container.appendChild(wrapper);
       }
 
       function renderTopOutliers(outliers) {
@@ -717,101 +681,6 @@
           .map(([col, cnt]) => `<strong>${escapeHtml(col)}</strong>: ${cnt}`)
           .join(", ");
       }
-
-      // Preprocessing form handler
-      const preprocessingForm = document.getElementById("preprocessing-form");
-      const preprocessingSubmitBtn = document.getElementById("preprocessing-submit-btn");
-      const preprocessingStatusEl = document.getElementById("preprocessing-status");
-      const preprocessingResultsEl = document.getElementById("preprocessing-results");
-      const preprocessingDatasetSelect = document.getElementById("preprocessing-dataset");
-
-      function updatePreprocessingDatasetSelect() {
-        preprocessingDatasetSelect.innerHTML = '<option value="">-- Select dataset --</option>';
-        currentDatasets
-          .filter((d) => d.role === "fact" || d.target_present === "yes")
-          .forEach((d) => {
-            const opt = document.createElement("option");
-            opt.value = d.id;
-            opt.textContent = `${d.filename} (${d.role})`;
-            preprocessingDatasetSelect.appendChild(opt);
-          });
-      }
-
-      preprocessingForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-
-        const formData = new FormData(preprocessingForm);
-        const datasetId = parseInt(formData.get("dataset_id"));
-        const targetColumn = formData.get("target_column").trim();
-        const problemType = formData.get("problem_type");
-
-        if (!datasetId || !targetColumn) {
-          preprocessingStatusEl.textContent = "Please select dataset and enter target column.";
-          preprocessingStatusEl.className = "status error";
-          return;
-        }
-
-        preprocessingSubmitBtn.disabled = true;
-        preprocessingStatusEl.textContent = "Running preprocessing pipeline…";
-        preprocessingStatusEl.className = "status";
-
-        try {
-          const resp = await fetch("/api/preprocessing", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (!resp.ok) {
-            const errText = await resp.text();
-            let msg = "Request failed: " + resp.status;
-            try {
-              const json = JSON.parse(errText);
-              if (json.detail) msg = json.detail;
-            } catch (_) {}
-            throw new Error(msg);
-          }
-
-          const result = await resp.json();
-          renderPreprocessingResults(result);
-          preprocessingStatusEl.textContent = "Preprocessing completed successfully.";
-          preprocessingStatusEl.className = "status ok";
-        } catch (err) {
-          console.error(err);
-          preprocessingStatusEl.textContent = err.message || "Preprocessing failed.";
-          preprocessingStatusEl.className = "status error";
-        } finally {
-          preprocessingSubmitBtn.disabled = false;
-        }
-      });
-
-      function renderPreprocessingResults(result) {
-        const summary = result.preprocessing_summary || {};
-        const steps = summary.steps_applied || [];
-
-        preprocessingResultsEl.innerHTML =
-          `<div class="pill"><span class="pill-dot"></span><span>Train: ${result.n_train} rows · Test: ${result.n_test} rows</span></div>` +
-          `<div class="pill"><span class="pill-dot"></span><span>Features: ${result.n_features}</span></div>` +
-          `<div class="pill"><span class="pill-dot"></span><span>Target: ${escapeHtml(result.target_name)}</span></div>` +
-          `<div style="margin-top: 8px"><div class="section-title">Steps Applied</div><ul class="sanity-list">${steps
-            .map((s) => `<li>${escapeHtml(s)}</li>`)
-            .join("")}</ul></div>` +
-          (summary.columns_dropped && summary.columns_dropped.length > 0
-            ? `<div style="margin-top: 6px"><div class="section-title">Columns Dropped</div><div class="muted" style="font-size: 11px">${summary.columns_dropped
-                .slice(0, 10)
-                .map((c) => escapeHtml(c))
-                .join(", ")}${summary.columns_dropped.length > 10 ? "…" : ""}</div></div>`
-            : "") +
-          `<div style="margin-top: 8px"><div class="section-title">Shape Progression</div><div class="muted" style="font-size: 11px">` +
-          `Initial: ${summary.initial_shape ? summary.initial_shape.join(" × ") : "—"} → ` +
-          `Final: ${result.n_train + result.n_test} × ${result.n_features + 1}</div></div>`;
-      }
-
-      // Update preprocessing dataset dropdown when datasets are loaded
-      const originalRenderDatasets = renderDatasetsOverview;
-      renderDatasetsOverview = function (datasets) {
-        originalRenderDatasets(datasets);
-        updatePreprocessingDatasetSelect();
-      };
 
       // On load, try to fetch existing datasets so UI remembers previous runs
       (async () => {
