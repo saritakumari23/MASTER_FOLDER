@@ -352,18 +352,6 @@
             <div class="section-title">Select Problem Type</div>
             <form id="problem-type-form" style="font-size: 12px">
               <div class="input-row">
-                <label for="problem-type-dataset">Select Dataset</label>
-                <select
-                  id="problem-type-dataset"
-                  name="dataset_id"
-                  style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)"
-                  required
-                >
-                  <option value="">-- Select dataset --</option>
-                </select>
-              </div>
-
-              <div class="input-row">
                 <label for="problem-type">Problem Type</label>
                 <select
                   id="problem-type"
@@ -381,7 +369,7 @@
                   <option value="time_series">7️⃣ Time Series Forecasting (Predict future values)</option>
                 </select>
                 <div class="hint">
-                  Select the type of ML problem you want to solve with this dataset.
+                  Select the type of ML problem you want to solve. This applies to all datasets as future steps work with all datasets together.
                 </div>
               </div>
 
@@ -423,6 +411,19 @@
                 <li><strong>Time Series:</strong> Stock prices, sales forecasting, weather prediction</li>
               </ul>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 16px; display: none" id="preprocessing-card">
+        <div class="card-header">
+          <div class="card-title">STEP 5 · Data Preprocessing</div>
+          <span class="card-tag" id="preprocessing-step-badge">Step 1/7</span>
+        </div>
+
+        <div id="preprocessing-content">
+          <div class="muted" style="font-size: 12px; padding: 8px">
+            Please select a problem type first to start preprocessing.
           </div>
         </div>
       </div>
@@ -498,7 +499,7 @@
           }
 
           const data = await resp.json();
-          renderDatasetsOverview(data.datasets || []);
+          renderDatasetsOverview(data.datasets || [], true); // Track these as current session datasets
           setStatus("Dataset analysis completed successfully.", "ok");
         } catch (err) {
           console.error(err);
@@ -509,9 +510,14 @@
       });
 
       let currentDatasets = [];
+      let currentSessionDatasetIds = new Set(); // Track dataset IDs from current upload session
 
-      function renderDatasetsOverview(datasets) {
+      function renderDatasetsOverview(datasets, trackSession = false) {
         currentDatasets = datasets;
+        // Track dataset IDs from current upload session (only when explicitly requested)
+        if (trackSession && datasets.length > 0) {
+          currentSessionDatasetIds = new Set(datasets.map(d => d.id));
+        }
         if (!datasets.length) {
           summaryEl.innerHTML = "<p class='muted'>No datasets analyzed yet.</p>";
           datasetCountEl.style.display = "none";
@@ -770,7 +776,6 @@
 
       // Problem Type form handler
       const problemTypeForm = document.getElementById("problem-type-form");
-      const problemTypeDatasetSelect = document.getElementById("problem-type-dataset");
       const problemTypeSelect = document.getElementById("problem-type");
       const problemSubtypeRow = document.getElementById("problem-subtype-row");
       const problemSubtypeSelect = document.getElementById("problem-subtype");
@@ -790,38 +795,37 @@
         }
       });
 
-      function updateProblemTypeDatasetSelect() {
-        problemTypeDatasetSelect.innerHTML = '<option value="">-- Select dataset --</option>';
-        currentDatasets
-          .filter((d) => d.role === "fact" || d.target_present === "yes")
-          .forEach((d) => {
-            const opt = document.createElement("option");
-            opt.value = d.id;
-            let label = `${d.filename} (${d.role})`;
-            if (d.problem_type) {
-              label += ` - ${d.problem_type}`;
-              if (d.problem_subtype) label += ` (${d.problem_subtype})`;
+      // Load current problem type on page load
+      async function loadProblemType() {
+        try {
+          const resp = await fetch("/api/problem-type");
+          if (!resp.ok) return;
+          const data = await resp.json();
+          if (data.problem_type) {
+            problemTypeSelect.value = data.problem_type;
+            if (data.problem_type === "classification") {
+              problemSubtypeRow.style.display = "block";
+              if (data.problem_subtype) {
+                problemSubtypeSelect.value = data.problem_subtype;
+              }
             }
-            opt.textContent = label;
-            problemTypeDatasetSelect.appendChild(opt);
-            
-            // Pre-select problem type if already saved
-            if (d.problem_type) {
-              opt.selected = false; // Don't auto-select, but show in label
-            }
-          });
+          }
+          // Load preprocessing status after problem type is loaded
+          loadPreprocessingStatus();
+        } catch (e) {
+          // ignore errors
+        }
       }
 
       problemTypeForm.addEventListener("submit", async (e) => {
         e.preventDefault();
 
         const formData = new FormData(problemTypeForm);
-        const datasetId = parseInt(formData.get("dataset_id"));
         const problemType = formData.get("problem_type");
         const problemSubtype = formData.get("problem_subtype");
 
-        if (!datasetId || !problemType) {
-          problemTypeStatusEl.textContent = "Please select dataset and problem type.";
+        if (!problemType) {
+          problemTypeStatusEl.textContent = "Please select a problem type.";
           problemTypeStatusEl.className = "status error";
           return;
         }
@@ -856,15 +860,8 @@
           problemTypeStatusEl.textContent = `Problem type saved: ${result.problem_type}${result.problem_subtype ? ` (${result.problem_subtype})` : ""}`;
           problemTypeStatusEl.className = "status ok";
           
-          // Update dataset list to reflect saved problem type
-          updateProblemTypeDatasetSelect();
-          
-          // Refresh datasets overview
-          const datasetsResp = await fetch("/api/datasets");
-          if (datasetsResp.ok) {
-            const datasetsData = await datasetsResp.json();
-            renderDatasetsOverview(datasetsData.datasets || []);
-          }
+          // Load preprocessing status after problem type is saved
+          loadPreprocessingStatus();
         } catch (err) {
           console.error(err);
           problemTypeStatusEl.textContent = err.message || "Failed to save problem type.";
@@ -874,14 +871,7 @@
         }
       });
 
-      // Update dataset dropdown when datasets are loaded
-      const originalRenderDatasets = renderDatasetsOverview;
-      renderDatasetsOverview = function (datasets) {
-        originalRenderDatasets(datasets);
-        updateProblemTypeDatasetSelect();
-      };
-
-      // On load, try to fetch existing datasets so UI remembers previous runs
+      // On load, try to fetch existing datasets and problem type so UI remembers previous runs
       (async () => {
         try {
           const resp = await fetch("/api/datasets");
@@ -891,7 +881,616 @@
         } catch (e) {
           // ignore
         }
+        // Load problem type (which will also load preprocessing)
+        loadProblemType();
       })();
+
+      // Preprocessing workflow
+      const preprocessingCard = document.getElementById("preprocessing-card");
+      let preprocessingStatus = null;
+      let currentPreprocessingStep = 1;
+
+      async function loadPreprocessingStatus() {
+        try {
+          const resp = await fetch("/api/preprocessing/status");
+          if (!resp.ok) return;
+          const status = await resp.json();
+          preprocessingStatus = status;
+          
+          if (status.status !== "not_started" && status.applicable_steps && status.applicable_steps.length > 0) {
+            preprocessingCard.style.display = "block";
+            renderPreprocessingStep(status.current_step || 1, status);
+          } else if (status.applicable_steps && status.applicable_steps.length > 0) {
+            preprocessingCard.style.display = "block";
+            renderPreprocessingStep(1, status);
+          }
+        } catch (e) {
+          console.error("Failed to load preprocessing status:", e);
+        }
+      }
+
+      function renderPreprocessingStep(stepNumber, status) {
+        if (!status || !status.applicable_steps) return;
+        
+        const step = status.applicable_steps.find(s => s.step_number === stepNumber);
+        if (!step) return;
+        
+        currentPreprocessingStep = stepNumber;
+        const totalSteps = status.applicable_steps.length;
+        document.getElementById("preprocessing-step-badge").textContent = `Step ${stepNumber}/${totalSteps}`;
+        
+        if (stepNumber === 1) {
+          // Step 1: Data Cleaning
+          renderDataCleaningStep(step, status);
+        } else if (stepNumber === 2) {
+          // Step 2: Data Reduction
+          renderDataReductionStep(step, status);
+        } else if (stepNumber === 3) {
+          // Step 3: Outlier Handling
+          renderOutlierHandlingStep(step, status);
+        } else {
+          // Other steps will be implemented later
+          document.getElementById("preprocessing-content").innerHTML = `
+            <div class="muted" style="font-size: 12px; padding: 8px">
+              Step ${stepNumber}: ${step.title} - Coming soon
+            </div>
+          `;
+        }
+      }
+
+      function renderDataCleaningStep(step, status) {
+        const html = `
+          <div style="padding: 8px">
+            <div class="section-title">${step.title}</div>
+            <div class="muted" style="font-size: 11px; margin-bottom: 12px">${step.description}</div>
+            
+            <div id="data-cleaning-datasets" style="margin-bottom: 12px"></div>
+            
+            <div style="border-top: 1px solid rgba(148,163,184,0.3); padding-top: 12px; margin-top: 12px">
+              <div class="section-title" style="font-size: 12px">Configuration</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px">
+                <div class="input-row">
+                  <label>Handle Missing Values</label>
+                  <select id="data-cleaning-missing" style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)">
+                    <option value="mean">Mean (numeric)</option>
+                    <option value="median">Median (numeric)</option>
+                    <option value="mode">Mode (categorical)</option>
+                    <option value="forward_fill">Forward Fill</option>
+                    <option value="drop">Drop Rows</option>
+                  </select>
+                </div>
+                <div class="input-row">
+                  <label>Remove Duplicates</label>
+                  <select id="data-cleaning-duplicates" style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)">
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            
+            <div id="data-cleaning-results" style="margin-top: 12px"></div>
+            <div id="data-cleaning-status" class="status" style="margin-top: 8px"></div>
+            <div id="data-cleaning-actions" style="margin-top: 12px; display: none">
+              <button type="button" id="next-step-btn" style="padding: 8px 16px; background: rgba(56,189,248,0.2); border: 1px solid rgba(56,189,248,0.5); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 11px">
+                Next Step →
+              </button>
+            </div>
+          </div>
+        `;
+        
+        document.getElementById("preprocessing-content").innerHTML = html;
+        
+        // Load datasets and render
+        loadDatasetsForCleaning();
+        
+        // Attach next step button listener
+        setTimeout(() => {
+          const nextBtn = document.getElementById("next-step-btn");
+          if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+              const nextStepNum = currentPreprocessingStep + 1;
+              if (preprocessingStatus && preprocessingStatus.applicable_steps) {
+                const nextStep = preprocessingStatus.applicable_steps.find(s => s.step_number === nextStepNum);
+                if (nextStep) {
+                  renderPreprocessingStep(nextStepNum, preprocessingStatus);
+                }
+              }
+            });
+          }
+        }, 100);
+      }
+
+      async function loadDatasetsForCleaning() {
+        try {
+          const datasetsEl = document.getElementById("data-cleaning-datasets");
+          
+          // Only show datasets from current upload session
+          if (currentSessionDatasetIds.size === 0) {
+            datasetsEl.innerHTML = '<div class="muted" style="font-size: 11px; padding: 8px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">No datasets from current upload session. Please upload datasets in STEP 1 first.</div>';
+            return;
+          }
+          
+          const resp = await fetch("/api/datasets");
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const allDatasets = data.datasets || [];
+          
+          // Filter to only datasets from current upload session
+          const datasets = allDatasets.filter(ds => currentSessionDatasetIds.has(ds.id));
+          
+          if (datasets.length === 0) {
+            datasetsEl.innerHTML = '<div class="muted" style="font-size: 11px; padding: 8px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">No datasets from current upload session found. Please upload datasets in STEP 1 first.</div>';
+            return;
+          }
+          
+          let html = '<div class="section-title" style="font-size: 12px">Datasets to Process</div>';
+          html += '<div style="display: grid; gap: 6px; margin-top: 6px">';
+          
+          datasets.forEach(ds => {
+            html += `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">
+                <div>
+                  <strong style="font-size: 11px">${escapeHtml(ds.filename)}</strong>
+                  <div class="muted" style="font-size: 10px">${ds.n_rows} rows × ${ds.n_cols} columns</div>
+                </div>
+                <button type="button" class="clean-dataset-btn" data-dataset-id="${ds.id}" style="font-size: 10px; padding: 4px 10px">
+                  Clean Data
+                </button>
+              </div>
+            `;
+          });
+          
+          html += '</div>';
+          datasetsEl.innerHTML = html;
+          
+          // Attach event listeners
+          document.querySelectorAll('.clean-dataset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const datasetId = parseInt(btn.dataset.datasetId);
+              executeDataCleaning(datasetId);
+            });
+          });
+        } catch (e) {
+          console.error("Failed to load datasets:", e);
+        }
+      }
+
+      async function executeDataCleaning(datasetId) {
+        const statusEl = document.getElementById("data-cleaning-status");
+        const resultsEl = document.getElementById("data-cleaning-results");
+        const handleMissing = document.getElementById("data-cleaning-missing").value;
+        const dropDuplicates = document.getElementById("data-cleaning-duplicates").value;
+        
+        statusEl.textContent = "Cleaning data...";
+        statusEl.className = "status";
+        resultsEl.innerHTML = "";
+        
+        try {
+          const formData = new FormData();
+          formData.append("dataset_id", datasetId);
+          formData.append("handle_missing", handleMissing);
+          formData.append("drop_duplicates", dropDuplicates);
+          
+          const resp = await fetch("/api/preprocessing/step/1/execute", {
+            method: "POST",
+            body: formData,
+          });
+          
+          if (!resp.ok) {
+            const errText = await resp.text();
+            let msg = "Request failed: " + resp.status;
+            try {
+              const json = JSON.parse(errText);
+              if (json.detail) msg = json.detail;
+            } catch (_) {}
+            throw new Error(msg);
+          }
+          
+          const result = await resp.json();
+          
+          // Display results
+          resultsEl.innerHTML = `
+            <div style="border: 1px solid rgba(56,189,248,0.5); border-radius: 6px; padding: 8px; background: rgba(56,189,248,0.1)">
+              <div class="pill" style="margin-bottom: 4px">
+                <span class="pill-dot"></span>
+                <span>Initial: ${result.initial_shape.rows} × ${result.initial_shape.cols}</span>
+              </div>
+              <div class="pill" style="margin-bottom: 4px">
+                <span class="pill-dot"></span>
+                <span>Final: ${result.final_shape.rows} × ${result.final_shape.cols}</span>
+              </div>
+              ${result.rows_dropped > 0 ? `<div class="pill"><span class="pill-dot"></span><span>Rows dropped: ${result.rows_dropped}</span></div>` : ''}
+            </div>
+          `;
+          
+          statusEl.textContent = "Data cleaning completed successfully";
+          statusEl.className = "status ok";
+          
+          // Show next step button
+          const actionsEl = document.getElementById("data-cleaning-actions");
+          if (actionsEl) {
+            actionsEl.style.display = "block";
+          }
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = err.message || "Failed to clean data";
+          statusEl.className = "status error";
+        }
+      }
+
+      function renderDataReductionStep(step, status) {
+        const html = `
+          <div style="padding: 8px">
+            <div class="section-title">${step.title}</div>
+            <div class="muted" style="font-size: 11px; margin-bottom: 12px">${step.description}</div>
+            
+            <div id="data-reduction-datasets" style="margin-bottom: 12px"></div>
+            
+            <div style="border-top: 1px solid rgba(148,163,184,0.3); padding-top: 12px; margin-top: 12px">
+              <div class="section-title" style="font-size: 12px">Configuration</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px">
+                <div class="input-row">
+                  <label>Drop High Missing (%)</label>
+                  <input id="data-reduction-high-missing" type="number" step="0.01" min="0" max="1" value="0.5" style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)">
+                  <div class="hint" style="font-size: 10px">Drop columns with &gt; this % missing values</div>
+                </div>
+                <div class="input-row">
+                  <label>Drop Low Variance</label>
+                  <input id="data-reduction-low-variance" type="number" step="0.001" min="0" value="0.01" style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)">
+                  <div class="hint" style="font-size: 10px">Drop numeric columns with variance &lt; this threshold</div>
+                </div>
+              </div>
+            </div>
+            
+            <div id="data-reduction-results" style="margin-top: 12px"></div>
+            <div id="data-reduction-status" class="status" style="margin-top: 8px"></div>
+            <div id="data-reduction-actions" style="margin-top: 12px; display: none">
+              <button type="button" id="next-step-btn-reduction" style="padding: 8px 16px; background: rgba(56,189,248,0.2); border: 1px solid rgba(56,189,248,0.5); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 11px">
+                Next Step →
+              </button>
+            </div>
+          </div>
+        `;
+        
+        document.getElementById("preprocessing-content").innerHTML = html;
+        
+        // Load datasets and render
+        loadDatasetsForReduction();
+        
+        // Attach next step button listener
+        setTimeout(() => {
+          const nextBtn = document.getElementById("next-step-btn-reduction");
+          if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+              const nextStepNum = currentPreprocessingStep + 1;
+              if (preprocessingStatus && preprocessingStatus.applicable_steps) {
+                const nextStep = preprocessingStatus.applicable_steps.find(s => s.step_number === nextStepNum);
+                if (nextStep) {
+                  renderPreprocessingStep(nextStepNum, preprocessingStatus);
+                }
+              }
+            });
+          }
+        }, 100);
+      }
+
+      async function loadDatasetsForReduction() {
+        try {
+          const datasetsEl = document.getElementById("data-reduction-datasets");
+          
+          // Only show datasets from current upload session
+          if (currentSessionDatasetIds.size === 0) {
+            datasetsEl.innerHTML = '<div class="muted" style="font-size: 11px; padding: 8px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">No datasets from current upload session. Please upload datasets in STEP 1 first.</div>';
+            return;
+          }
+          
+          const resp = await fetch("/api/datasets");
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const allDatasets = data.datasets || [];
+          
+          // Filter to only datasets from current upload session
+          const datasets = allDatasets.filter(ds => currentSessionDatasetIds.has(ds.id));
+          
+          if (datasets.length === 0) {
+            datasetsEl.innerHTML = '<div class="muted" style="font-size: 11px; padding: 8px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">No datasets from current upload session found. Please upload datasets in STEP 1 first.</div>';
+            return;
+          }
+          
+          let html = '<div class="section-title" style="font-size: 12px">Datasets to Process</div>';
+          html += '<div style="display: grid; gap: 6px; margin-top: 6px">';
+          
+          datasets.forEach(ds => {
+            html += `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">
+                <div>
+                  <strong style="font-size: 11px">${escapeHtml(ds.filename)}</strong>
+                  <div class="muted" style="font-size: 10px">${ds.n_rows} rows × ${ds.n_cols} columns</div>
+                </div>
+                <button type="button" class="reduce-dataset-btn" data-dataset-id="${ds.id}" style="font-size: 10px; padding: 4px 10px">
+                  Reduce Data
+                </button>
+              </div>
+            `;
+          });
+          
+          html += '</div>';
+          datasetsEl.innerHTML = html;
+          
+          // Attach event listeners
+          document.querySelectorAll('.reduce-dataset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const datasetId = parseInt(btn.dataset.datasetId);
+              executeDataReduction(datasetId);
+            });
+          });
+        } catch (e) {
+          console.error("Failed to load datasets:", e);
+        }
+      }
+
+      async function executeDataReduction(datasetId) {
+        const statusEl = document.getElementById("data-reduction-status");
+        const resultsEl = document.getElementById("data-reduction-results");
+        const dropHighMissing = document.getElementById("data-reduction-high-missing").value;
+        const dropLowVariance = document.getElementById("data-reduction-low-variance").value;
+        
+        statusEl.textContent = "Reducing data...";
+        statusEl.className = "status";
+        resultsEl.innerHTML = "";
+        
+        try {
+          const formData = new FormData();
+          formData.append("dataset_id", datasetId);
+          formData.append("drop_high_missing", dropHighMissing);
+          formData.append("drop_low_variance", dropLowVariance);
+          
+          const resp = await fetch("/api/preprocessing/step/2/execute", {
+            method: "POST",
+            body: formData,
+          });
+          
+          if (!resp.ok) {
+            const errText = await resp.text();
+            let msg = "Request failed: " + resp.status;
+            try {
+              const json = JSON.parse(errText);
+              if (json.detail) msg = json.detail;
+            } catch (_) {}
+            throw new Error(msg);
+          }
+          
+          const result = await resp.json();
+          
+          // Display results
+          resultsEl.innerHTML = `
+            <div style="border: 1px solid rgba(56,189,248,0.5); border-radius: 6px; padding: 8px; background: rgba(56,189,248,0.1)">
+              <div class="pill" style="margin-bottom: 4px">
+                <span class="pill-dot"></span>
+                <span>Initial: ${result.initial_shape.rows} × ${result.initial_shape.cols}</span>
+              </div>
+              <div class="pill" style="margin-bottom: 4px">
+                <span class="pill-dot"></span>
+                <span>Final: ${result.final_shape.rows} × ${result.final_shape.cols}</span>
+              </div>
+              ${result.columns_dropped_count > 0 ? `<div class="pill"><span class="pill-dot"></span><span>Columns dropped: ${result.columns_dropped_count}</span></div>` : ''}
+              ${result.columns_dropped.length > 0 ? `<div class="muted" style="font-size: 10px; margin-top: 4px">Dropped: ${result.columns_dropped.slice(0, 5).join(", ")}${result.columns_dropped.length > 5 ? ` + ${result.columns_dropped.length - 5} more` : ""}</div>` : ''}
+            </div>
+          `;
+          
+          statusEl.textContent = "Data reduction completed successfully";
+          statusEl.className = "status ok";
+          
+          // Show next step button
+          const actionsEl = document.getElementById("data-reduction-actions");
+          if (actionsEl) {
+            actionsEl.style.display = "block";
+          }
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = err.message || "Failed to reduce data";
+          statusEl.className = "status error";
+        }
+      }
+
+      function renderOutlierHandlingStep(step, status) {
+        const html = `
+          <div style="padding: 8px">
+            <div class="section-title">${step.title}</div>
+            <div class="muted" style="font-size: 11px; margin-bottom: 12px">${step.description}</div>
+            
+            <div id="outlier-handling-datasets" style="margin-bottom: 12px"></div>
+            
+            <div style="border-top: 1px solid rgba(148,163,184,0.3); padding-top: 12px; margin-top: 12px">
+              <div class="section-title" style="font-size: 12px">Configuration</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px">
+                <div class="input-row">
+                  <label>Handle Outliers</label>
+                  <select id="outlier-handling-method" style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)">
+                    <option value="clip">Clip (Cap values)</option>
+                    <option value="remove">Remove (Delete rows)</option>
+                    <option value="none">None (Skip)</option>
+                  </select>
+                  <div class="hint" style="font-size: 10px">Clip: Cap outliers to bounds. Remove: Delete outlier rows.</div>
+                </div>
+                <div class="input-row">
+                  <label>Detection Method</label>
+                  <select id="outlier-detection-method" style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)">
+                    <option value="iqr">IQR (Interquartile Range)</option>
+                    <option value="zscore">Z-Score</option>
+                  </select>
+                  <div class="hint" style="font-size: 10px">IQR: Uses Q1-1.5*IQR and Q3+1.5*IQR. Z-Score: Uses standard deviations.</div>
+                </div>
+                <div class="input-row">
+                  <label>Z-Score Threshold</label>
+                  <input id="outlier-threshold" type="number" step="0.1" min="1" max="5" value="3.0" style="width: 100%; padding: 6px; border-radius: 6px; background: rgba(15,23,42,0.9); color: var(--text); border: 1px solid rgba(148,163,184,0.6)">
+                  <div class="hint" style="font-size: 10px">Only used for Z-Score method. Default: 3.0 (3 standard deviations)</div>
+                </div>
+              </div>
+            </div>
+            
+            <div id="outlier-handling-results" style="margin-top: 12px"></div>
+            <div id="outlier-handling-status" class="status" style="margin-top: 8px"></div>
+            <div id="outlier-handling-actions" style="margin-top: 12px; display: none">
+              <button type="button" id="next-step-btn-outlier" style="padding: 8px 16px; background: rgba(56,189,248,0.2); border: 1px solid rgba(56,189,248,0.5); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 11px">
+                Next Step →
+              </button>
+            </div>
+          </div>
+        `;
+        
+        document.getElementById("preprocessing-content").innerHTML = html;
+        
+        // Load datasets and render
+        loadDatasetsForOutlierHandling();
+        
+        // Attach next step button listener
+        setTimeout(() => {
+          const nextBtn = document.getElementById("next-step-btn-outlier");
+          if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+              const nextStepNum = currentPreprocessingStep + 1;
+              if (preprocessingStatus && preprocessingStatus.applicable_steps) {
+                const nextStep = preprocessingStatus.applicable_steps.find(s => s.step_number === nextStepNum);
+                if (nextStep) {
+                  renderPreprocessingStep(nextStepNum, preprocessingStatus);
+                }
+              }
+            });
+          }
+        }, 100);
+      }
+
+      async function loadDatasetsForOutlierHandling() {
+        try {
+          const datasetsEl = document.getElementById("outlier-handling-datasets");
+          
+          // Only show datasets from current upload session
+          if (currentSessionDatasetIds.size === 0) {
+            datasetsEl.innerHTML = '<div class="muted" style="font-size: 11px; padding: 8px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">No datasets from current upload session. Please upload datasets in STEP 1 first.</div>';
+            return;
+          }
+          
+          const resp = await fetch("/api/datasets");
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const allDatasets = data.datasets || [];
+          
+          // Filter to only datasets from current upload session
+          const datasets = allDatasets.filter(ds => currentSessionDatasetIds.has(ds.id));
+          
+          if (datasets.length === 0) {
+            datasetsEl.innerHTML = '<div class="muted" style="font-size: 11px; padding: 8px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">No datasets from current upload session found. Please upload datasets in STEP 1 first.</div>';
+            return;
+          }
+          
+          let html = '<div class="section-title" style="font-size: 12px">Datasets to Process</div>';
+          html += '<div style="display: grid; gap: 6px; margin-top: 6px">';
+          
+          datasets.forEach(ds => {
+            html += `
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px; border: 1px solid rgba(148,163,184,0.3); border-radius: 6px; background: rgba(15,23,42,0.5)">
+                <div>
+                  <strong style="font-size: 11px">${escapeHtml(ds.filename)}</strong>
+                  <div class="muted" style="font-size: 10px">${ds.n_rows} rows × ${ds.n_cols} columns</div>
+                </div>
+                <button type="button" class="handle-outlier-btn" data-dataset-id="${ds.id}" style="font-size: 10px; padding: 4px 10px">
+                  Handle Outliers
+                </button>
+              </div>
+            `;
+          });
+          
+          html += '</div>';
+          datasetsEl.innerHTML = html;
+          
+          // Attach event listeners
+          document.querySelectorAll('.handle-outlier-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const datasetId = parseInt(btn.dataset.datasetId);
+              executeOutlierHandling(datasetId);
+            });
+          });
+        } catch (e) {
+          console.error("Failed to load datasets:", e);
+        }
+      }
+
+      async function executeOutlierHandling(datasetId) {
+        const statusEl = document.getElementById("outlier-handling-status");
+        const resultsEl = document.getElementById("outlier-handling-results");
+        const handleMethod = document.getElementById("outlier-handling-method").value;
+        const detectionMethod = document.getElementById("outlier-detection-method").value;
+        const threshold = document.getElementById("outlier-threshold").value;
+        
+        statusEl.textContent = "Handling outliers...";
+        statusEl.className = "status";
+        resultsEl.innerHTML = "";
+        
+        try {
+          const formData = new FormData();
+          formData.append("dataset_id", datasetId);
+          formData.append("handle_outliers", handleMethod);
+          formData.append("outlier_method", detectionMethod);
+          formData.append("outlier_threshold", threshold);
+          
+          const resp = await fetch("/api/preprocessing/step/3/execute", {
+            method: "POST",
+            body: formData,
+          });
+          
+          if (!resp.ok) {
+            const errText = await resp.text();
+            let msg = "Request failed: " + resp.status;
+            try {
+              const json = JSON.parse(errText);
+              if (json.detail) msg = json.detail;
+            } catch (_) {}
+            throw new Error(msg);
+          }
+          
+          const result = await resp.json();
+          
+          // Display results
+          const outliersList = Object.entries(result.outliers_detected || {})
+            .slice(0, 5)
+            .map(([col, count]) => `<strong>${escapeHtml(col)}</strong>: ${count}`)
+            .join(", ");
+          const moreOutliers = Object.keys(result.outliers_detected || {}).length > 5 
+            ? ` + ${Object.keys(result.outliers_detected || {}).length - 5} more columns` 
+            : "";
+          
+          resultsEl.innerHTML = `
+            <div style="border: 1px solid rgba(56,189,248,0.5); border-radius: 6px; padding: 8px; background: rgba(56,189,248,0.1)">
+              <div class="pill" style="margin-bottom: 4px">
+                <span class="pill-dot"></span>
+                <span>Initial: ${result.initial_shape.rows} × ${result.initial_shape.cols}</span>
+              </div>
+              <div class="pill" style="margin-bottom: 4px">
+                <span class="pill-dot"></span>
+                <span>Final: ${result.final_shape.rows} × ${result.final_shape.cols}</span>
+              </div>
+              ${result.total_outliers_detected > 0 ? `<div class="pill" style="margin-bottom: 4px"><span class="pill-dot"></span><span>Outliers detected: ${result.total_outliers_detected}</span></div>` : ''}
+              ${result.rows_removed > 0 ? `<div class="pill"><span class="pill-dot"></span><span>Rows removed: ${result.rows_removed}</span></div>` : ''}
+              ${Object.keys(result.outliers_detected || {}).length > 0 ? `<div class="muted" style="font-size: 10px; margin-top: 4px">Top columns with outliers: ${outliersList}${moreOutliers}</div>` : ''}
+            </div>
+          `;
+          
+          statusEl.textContent = "Outlier handling completed successfully";
+          statusEl.className = "status ok";
+          
+          // Show next step button
+          const actionsEl = document.getElementById("outlier-handling-actions");
+          if (actionsEl) {
+            actionsEl.style.display = "block";
+          }
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = err.message || "Failed to handle outliers";
+          statusEl.className = "status error";
+        }
+      }
     </script>
   </body>
   </html>

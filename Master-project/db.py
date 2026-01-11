@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, Integer, String, create_engine
+from sqlalchemy import Column, DateTime, Integer, String, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
@@ -39,6 +39,27 @@ class DatasetRecord(Base):
     created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class ProjectConfigRecord(Base):
+    __tablename__ = "project_config"
+
+    id: int = Column(Integer, primary_key=True, index=True)
+    problem_type: str = Column(String, nullable=True)  # classification / regression / clustering / etc.
+    problem_subtype: str = Column(String, nullable=True)  # binary_classification / multiclass_classification / multilabel_classification
+    updated_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PreprocessingProgressRecord(Base):
+    __tablename__ = "preprocessing_progress"
+
+    id: int = Column(Integer, primary_key=True, index=True)
+    current_step: int = Column(Integer, nullable=False, default=1)  # 1-7, current step number
+    target_column: str = Column(String, nullable=True)  # Target column name (if applicable)
+    config_json: str = Column(String, nullable=True)  # JSON string of current PreprocessingConfig
+    completed_steps: str = Column(String, nullable=True)  # JSON array of completed step numbers
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class PreprocessingConfigRecord(Base):
     __tablename__ = "preprocessing_configs"
 
@@ -51,9 +72,34 @@ class PreprocessingConfigRecord(Base):
 
 
 def init_db() -> None:
-    """Create tables if they do not exist."""
-
+    """Create tables if they do not exist and migrate existing tables."""
+    
+    # Create all tables (for new databases)
     Base.metadata.create_all(bind=engine)
+    
+    # Migrate existing tables: Add new columns if they don't exist
+    _migrate_add_problem_type_columns()
+
+
+def _migrate_add_problem_type_columns() -> None:
+    """Add problem_type and problem_subtype columns to datasets table if they don't exist."""
+    try:
+        with engine.begin() as conn:  # Use begin() for automatic transaction management
+            # Check if columns exist by querying table info
+            result = conn.execute(text("PRAGMA table_info(datasets)"))
+            columns = [row[1] for row in result.fetchall()]
+            
+            # Add problem_type column if it doesn't exist
+            if "problem_type" not in columns:
+                conn.execute(text("ALTER TABLE datasets ADD COLUMN problem_type VARCHAR"))
+            
+            # Add problem_subtype column if it doesn't exist
+            if "problem_subtype" not in columns:
+                conn.execute(text("ALTER TABLE datasets ADD COLUMN problem_subtype VARCHAR"))
+    except Exception as e:
+        # If migration fails, log but don't crash (columns might already exist or other issue)
+        # This can happen if the table doesn't exist yet (will be created by create_all above)
+        pass  # Silent fail is OK here - columns will be created by create_all for new databases
 
 
 def get_session() -> Session:

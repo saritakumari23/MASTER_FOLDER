@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,10 +12,10 @@ from fastapi.staticfiles import StaticFiles
 
 import json
 
-from db import DatasetRecord, PreprocessingConfigRecord, get_session, init_db
+from db import DatasetRecord, PreprocessingConfigRecord, PreprocessingProgressRecord, ProjectConfigRecord, get_session, init_db
 from eda_core import run_basic_eda
-# Preprocessing temporarily removed
-# from preprocessing_core import PreprocessingConfig, run_preprocessing_pipeline
+from preprocessing_core import PreprocessingConfig, clean_data, reduce_data, handle_outliers
+from preprocessing_workflow import get_steps_for_problem_type, get_step_info, get_next_step, is_step_applicable
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -220,12 +222,13 @@ def run_eda_for_dataset(
 
 @app.post("/api/problem-type")
 def save_problem_type(
-    dataset_id: int = Form(...),
     problem_type: str = Form(...),
     problem_subtype: str | None = Form(None),
 ) -> Dict[str, Any]:
     """
-    STEP 4: Save problem type identification for a dataset.
+    STEP 4: Save problem type identification for the entire project.
+    
+    This applies to all datasets as future steps work with all datasets together.
 
     Problem types:
     - classification (with subtypes: binary_classification, multiclass_classification, multilabel_classification)
@@ -237,12 +240,7 @@ def save_problem_type(
     - time_series
     """
     session = get_session()
-    record = session.query(DatasetRecord).filter(DatasetRecord.id == dataset_id).first()
-
-    if record is None:
-        session.close()
-        raise HTTPException(status_code=404, detail=f"Dataset with id={dataset_id} not found.")
-
+    
     # Validate problem type
     valid_types = [
         "classification",
@@ -261,7 +259,13 @@ def save_problem_type(
         )
 
     # Validate subtype if classification
-    if problem_type == "classification" and problem_subtype:
+    if problem_type == "classification":
+        if not problem_subtype:
+            session.close()
+            raise HTTPException(
+                status_code=400,
+                detail="Classification subtype is required for classification problems.",
+            )
         valid_subtypes = ["binary_classification", "multiclass_classification", "multilabel_classification"]
         if problem_subtype not in valid_subtypes:
             session.close()
@@ -270,23 +274,375 @@ def save_problem_type(
                 detail=f"Invalid problem subtype. Must be one of: {', '.join(valid_subtypes)}",
             )
 
-    # Update record
-    record.problem_type = problem_type
-    record.problem_subtype = problem_subtype
+    # Get or create project config (only one record)
+    config = session.query(ProjectConfigRecord).first()
+    if config is None:
+        config = ProjectConfigRecord(problem_type=problem_type, problem_subtype=problem_subtype)
+        session.add(config)
+    else:
+        config.problem_type = problem_type
+        config.problem_subtype = problem_subtype
+    
     session.commit()
-    session.refresh(record)
+    session.refresh(config)
     session.close()
 
     return {
-        "dataset_id": record.id,
-        "filename": record.filename,
-        "problem_type": record.problem_type,
-        "problem_subtype": record.problem_subtype,
-        "message": "Problem type saved successfully",
+        "problem_type": config.problem_type,
+        "problem_subtype": config.problem_subtype,
+        "message": "Problem type saved successfully for all datasets",
     }
 
 
-# Preprocessing endpoint temporarily removed
+@app.get("/api/problem-type")
+def get_problem_type() -> Dict[str, Any]:
+    """Get the current problem type configuration."""
+    session = get_session()
+    config = session.query(ProjectConfigRecord).first()
+    session.close()
+
+    if config is None:
+        return {"problem_type": None, "problem_subtype": None}
+    
+    return {
+        "problem_type": config.problem_type,
+        "problem_subtype": config.problem_subtype,
+    }
+
+
+@app.get("/api/preprocessing/status")
+def get_preprocessing_status() -> Dict[str, Any]:
+    """Get current preprocessing status and progress."""
+    session = get_session()
+    
+    # Get problem type
+    project_config = session.query(ProjectConfigRecord).first()
+    if not project_config or not project_config.problem_type:
+        session.close()
+        return {
+            "status": "not_started",
+            "message": "Problem type must be selected first",
+            "current_step": None,
+            "applicable_steps": [],
+        }
+    
+    # Get preprocessing progress
+    progress = session.query(PreprocessingProgressRecord).first()
+    session.close()
+    
+    applicable_steps = get_steps_for_problem_type(project_config.problem_type, project_config.problem_subtype)
+    
+    if not progress:
+        return {
+            "status": "not_started",
+            "current_step": 1,
+            "applicable_steps": applicable_steps,
+            "completed_steps": [],
+        }
+    
+    completed_steps = json.loads(progress.completed_steps) if progress.completed_steps else []
+    
+    return {
+        "status": "in_progress" if progress.current_step <= len(applicable_steps) else "completed",
+        "current_step": progress.current_step,
+        "applicable_steps": applicable_steps,
+        "completed_steps": completed_steps,
+        "target_column": progress.target_column,
+    }
+
+
+@app.get("/api/preprocessing/steps")
+def get_preprocessing_steps() -> Dict[str, Any]:
+    """Get all preprocessing steps for current problem type."""
+    session = get_session()
+    project_config = session.query(ProjectConfigRecord).first()
+    session.close()
+    
+    if not project_config or not project_config.problem_type:
+        raise HTTPException(status_code=400, detail="Problem type must be selected first")
+    
+    steps = get_steps_for_problem_type(project_config.problem_type, project_config.problem_subtype)
+    
+    return {
+        "problem_type": project_config.problem_type,
+        "problem_subtype": project_config.problem_subtype,
+        "steps": steps,
+    }
+
+
+@app.get("/api/preprocessing/step/{step_number}")
+def get_preprocessing_step_info(step_number: int) -> Dict[str, Any]:
+    """Get information about a specific preprocessing step."""
+    session = get_session()
+    project_config = session.query(ProjectConfigRecord).first()
+    session.close()
+    
+    if not project_config or not project_config.problem_type:
+        raise HTTPException(status_code=400, detail="Problem type must be selected first")
+    
+    if not is_step_applicable(step_number, project_config.problem_type):
+        raise HTTPException(status_code=400, detail=f"Step {step_number} is not applicable to {project_config.problem_type}")
+    
+    step_info = get_step_info(step_number)
+    if not step_info:
+        raise HTTPException(status_code=404, detail=f"Step {step_number} not found")
+    
+    # Get current progress to see if step is completed
+    session = get_session()
+    progress = session.query(PreprocessingProgressRecord).first()
+    session.close()
+    
+    completed_steps = json.loads(progress.completed_steps) if progress and progress.completed_steps else []
+    
+    return {
+        **step_info,
+        "step_number": step_number,
+        "is_completed": step_number in completed_steps,
+        "is_current": progress and progress.current_step == step_number,
+    }
+
+
+@app.post("/api/preprocessing/step/1/execute")
+def execute_data_cleaning(
+    dataset_id: int = Form(...),
+    handle_missing: str = Form("mean"),
+    drop_duplicates: str = Form("true"),
+) -> Dict[str, Any]:
+    """
+    Execute Step 1: Data Cleaning for a specific dataset.
+    
+    This step applies to all problem types.
+    """
+    session = get_session()
+    
+    # Get dataset
+    dataset = session.query(DatasetRecord).filter(DatasetRecord.id == dataset_id).first()
+    if not dataset:
+        session.close()
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+    
+    # Get problem type
+    project_config = session.query(ProjectConfigRecord).first()
+    if not project_config or not project_config.problem_type:
+        session.close()
+        raise HTTPException(status_code=400, detail="Problem type must be selected first")
+    
+    session.close()
+    
+    # Read dataset
+    csv_path = Path(dataset.stored_path)
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail=f"CSV file not found: {csv_path}")
+    
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {e}")
+    
+    # Execute data cleaning
+    config = PreprocessingConfig(
+        handle_missing=handle_missing,
+        drop_duplicates=(drop_duplicates.lower() == "true"),
+    )
+    
+    initial_shape = df.shape
+    df_cleaned = clean_data(df, config)
+    final_shape = df_cleaned.shape
+    
+    # Calculate statistics
+    rows_dropped = initial_shape[0] - final_shape[0]
+    missing_before = df.isna().sum().to_dict()
+    missing_after = df_cleaned.isna().sum().to_dict()
+    
+    return {
+        "dataset_id": dataset_id,
+        "filename": dataset.filename,
+        "initial_shape": {"rows": int(initial_shape[0]), "cols": int(initial_shape[1])},
+        "final_shape": {"rows": int(final_shape[0]), "cols": int(final_shape[1])},
+        "rows_dropped": int(rows_dropped),
+        "missing_values_before": {k: int(v) for k, v in missing_before.items()},
+        "missing_values_after": {k: int(v) for k, v in missing_after.items()},
+        "config": {
+            "handle_missing": handle_missing,
+            "drop_duplicates": drop_duplicates.lower() == "true",
+        },
+        "message": "Data cleaning completed successfully",
+    }
+
+
+@app.post("/api/preprocessing/step/2/execute")
+def execute_data_reduction(
+    dataset_id: int = Form(...),
+    drop_high_missing: str = Form("0.5"),
+    drop_low_variance: str = Form("0.01"),
+) -> Dict[str, Any]:
+    """
+    Execute Step 2: Data Reduction for a specific dataset.
+    
+    This step applies to all problem types.
+    """
+    session = get_session()
+    
+    # Get dataset
+    dataset = session.query(DatasetRecord).filter(DatasetRecord.id == dataset_id).first()
+    if not dataset:
+        session.close()
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+    
+    # Get problem type
+    project_config = session.query(ProjectConfigRecord).first()
+    if not project_config or not project_config.problem_type:
+        session.close()
+        raise HTTPException(status_code=400, detail="Problem type must be selected first")
+    
+    session.close()
+    
+    # Read dataset
+    csv_path = Path(dataset.stored_path)
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail=f"CSV file not found: {csv_path}")
+    
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {e}")
+    
+    # Execute data reduction
+    config = PreprocessingConfig(
+        drop_high_missing=float(drop_high_missing),
+        drop_low_variance=float(drop_low_variance),
+    )
+    
+    initial_shape = df.shape
+    initial_columns = list(df.columns)
+    df_reduced = reduce_data(df, config)
+    final_shape = df_reduced.shape
+    final_columns = list(df_reduced.columns)
+    
+    # Calculate statistics
+    columns_dropped = set(initial_columns) - set(final_columns)
+    
+    return {
+        "dataset_id": dataset_id,
+        "filename": dataset.filename,
+        "initial_shape": {"rows": int(initial_shape[0]), "cols": int(initial_shape[1])},
+        "final_shape": {"rows": int(final_shape[0]), "cols": int(final_shape[1])},
+        "columns_dropped": list(columns_dropped),
+        "columns_dropped_count": len(columns_dropped),
+        "config": {
+            "drop_high_missing": float(drop_high_missing),
+            "drop_low_variance": float(drop_low_variance),
+        },
+        "message": "Data reduction completed successfully",
+    }
+
+
+@app.post("/api/preprocessing/step/3/execute")
+def execute_outlier_handling(
+    dataset_id: int = Form(...),
+    handle_outliers: str = Form("clip"),
+    outlier_method: str = Form("iqr"),
+    outlier_threshold: str = Form("3.0"),
+) -> Dict[str, Any]:
+    """
+    Execute Step 3: Outlier Handling for a specific dataset.
+    
+    This step applies to classification and regression problem types.
+    """
+    session = get_session()
+    
+    # Get dataset
+    dataset = session.query(DatasetRecord).filter(DatasetRecord.id == dataset_id).first()
+    if not dataset:
+        session.close()
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+    
+    # Get problem type
+    project_config = session.query(ProjectConfigRecord).first()
+    if not project_config or not project_config.problem_type:
+        session.close()
+        raise HTTPException(status_code=400, detail="Problem type must be selected first")
+    
+    # Check if step is applicable
+    if project_config.problem_type not in ["classification", "regression"]:
+        session.close()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Outlier handling is only applicable for classification and regression problems, not {project_config.problem_type}"
+        )
+    
+    session.close()
+    
+    # Read dataset
+    csv_path = Path(dataset.stored_path)
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail=f"CSV file not found: {csv_path}")
+    
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {e}")
+    
+    # Execute outlier handling
+    config = PreprocessingConfig(
+        handle_outliers=handle_outliers,
+        outlier_method=outlier_method,
+        outlier_threshold=float(outlier_threshold),
+    )
+    
+    initial_shape = df.shape
+    initial_rows = initial_shape[0]
+    
+    # Count outliers before handling
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    outliers_info = {}
+    
+    if outlier_method == "iqr" and len(numeric_cols) > 0:
+        for col in numeric_cols:
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            if IQR == 0:
+                continue
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
+            outliers_info[col] = len(outliers)
+    elif outlier_method == "zscore" and len(numeric_cols) > 0:
+        threshold = float(outlier_threshold)
+        for col in numeric_cols:
+            col_std = df[col].std()
+            if col_std == 0:
+                continue
+            z_scores = np.abs((df[col] - df[col].mean()) / col_std)
+            outliers = df[z_scores >= threshold]
+            outliers_info[col] = len(outliers)
+    
+    df_processed = handle_outliers(df, config)
+    final_shape = df_processed.shape
+    final_rows = final_shape[0]
+    
+    # Calculate statistics
+    rows_removed = initial_rows - final_rows if handle_outliers == "remove" else 0
+    
+    return {
+        "dataset_id": dataset_id,
+        "filename": dataset.filename,
+        "initial_shape": {"rows": int(initial_shape[0]), "cols": int(initial_shape[1])},
+        "final_shape": {"rows": int(final_shape[0]), "cols": int(final_shape[1])},
+        "rows_removed": int(rows_removed),
+        "outliers_detected": outliers_info,
+        "total_outliers_detected": sum(outliers_info.values()),
+        "config": {
+            "handle_outliers": handle_outliers,
+            "outlier_method": outlier_method,
+            "outlier_threshold": float(outlier_threshold),
+        },
+        "message": "Outlier handling completed successfully",
+    }
+
+
+# Preprocessing endpoint temporarily removed (will be replaced with step-by-step endpoints)
 # @app.post("/api/preprocessing")
 # def run_preprocessing(
 #     dataset_id: int = Form(...),
